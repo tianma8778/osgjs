@@ -4,6 +4,7 @@ import GLObject from 'osg/GLObject';
 import StateAttribute from 'osg/StateAttribute';
 import ShaderProcessor from 'osgShader/ShaderProcessor';
 import Timer from 'osg/Timer';
+import WebglCaps from 'osg/WebGLCaps';
 
 // singleton
 var sp = new ShaderProcessor();
@@ -325,8 +326,9 @@ utils.createPrototypeStateAttribute(
                         !gl.getProgramParameter(this._program, gl.LINK_STATUS) &&
                         !gl.isContextLost()
                     ) {
-                        var errLink = gl.getProgramInfoLog(this._program);
+                        this.computeUniformCount(gl);
 
+                        var errLink = gl.getProgramInfoLog(this._program);
                         notify.errorFold(
                             errLink,
                             "can't link program\nvertex shader:\n" +
@@ -360,7 +362,7 @@ utils.createPrototypeStateAttribute(
                 this.cacheAttributeList(gl, window.Object.keys(this._attributeMap));
                 this.cacheUniformList(gl, window.Object.keys(this._uniformMap));
 
-                this.getProgramInfo(gl);
+                this.computeUniformCount(gl);
 
                 return compileClean;
             },
@@ -407,6 +409,73 @@ utils.createPrototypeStateAttribute(
                             map[attr] = location;
                         }
                     }
+                }
+            },
+
+            computeUniformCount: function(gl) {
+                // http://www.khronos.org/registry/webgl/specs/latest/1.0/#5.14
+                var enums = {
+                    0x8b50: { type: 'vec2', size: 1, sizePack: 0.5 },
+                    0x8b51: { type: 'vec3', size: 1, sizePack: 0.75 },
+                    0x8b52: { type: 'vec4', size: 1, sizePack: 1.0 },
+
+                    0x8b53: { type: 'ivec2', size: 1, sizePack: 0.5 },
+                    0x8b54: { type: 'ivec3', size: 1, sizePack: 0.75 },
+                    0x8b55: { type: 'ivec4', size: 1, sizePack: 1.0 },
+
+                    0x8b56: { type: 'bool', size: 1, sizePack: 0.25 },
+                    0x8b57: { type: 'bvec2', size: 1, sizePack: 0.5 },
+                    0x8b58: { type: 'bvec3', size: 1, sizePack: 0.75 },
+                    0x8b59: { type: 'bvec4', size: 1, sizePack: 1 },
+
+                    0x8b5a: { type: 'mat2', size: 1, sizePack: 2 },
+                    0x8b5b: { type: 'mat3', size: 3, sizePack: 3 },
+                    0x8b5c: { type: 'mat4', size: 4, sizePack: 4 },
+
+                    0x8b5e: { type: 'sampler2D', size: 0, sizePack: 0.0 },
+                    0x8b60: { type: 'samplerCube', size: 0, sizePack: 0.0 },
+
+                    0x1400: { type: 'byte', size: 1, sizePack: 0.25 },
+                    0x1401: { type: 'ubyte', size: 1, sizePack: 0.25 },
+                    0x1402: { type: 'short', size: 1, sizePack: 0.25 },
+                    0x1403: { type: 'ushort', size: 1, sizePack: 0.25 },
+                    0x1404: { type: 'int', size: 1, sizePack: 0.25 },
+                    0x1405: { type: 'uint', size: 1, sizePack: 0.25 },
+                    0x1406: { type: 'float', size: 1, sizePack: 0.25 }
+                };
+
+                var uniforms = [];
+                var uniformCount = 0;
+                var uniformSpecCount = 0;
+                var uniformPackCount = 0;
+
+                var activeUniforms = gl.getProgramParameter(this._program, gl.ACTIVE_UNIFORMS);
+                // Loop through active uniforms
+                for (var i = 0; i < activeUniforms; i++) {
+                    var uniform = gl.getActiveUniform(this._program, i);
+                    uniform.typeName = enums[uniform.type].type;
+                    uniforms.push(uniform);
+
+                    var size = uniform.size;
+                    uniformCount += size;
+
+                    uniform.sizeFourByte = enums[uniform.type].size * size;
+                    uniformSpecCount += uniform.sizeFourByte;
+
+                    uniform.sizeFourBytePack = enums[uniform.type].sizePack * size;
+                    uniformPackCount += uniform.sizeFourBytePack;
+                }
+
+                if (uniformCount > 60) {
+                    console.log(
+                        'MAX: ' +
+                            WebglCaps.instance().getWebGLParameters().MAX_FRAGMENT_UNIFORM_VECTORS
+                    );
+                    console.log(this._shaderName);
+                    console.log('count: ' + uniformCount);
+                    console.log('Min: ' + uniformPackCount);
+                    console.log('Max: ' + uniformSpecCount);
+                    if (console.table) console.table(uniforms);
                 }
             }
         })
